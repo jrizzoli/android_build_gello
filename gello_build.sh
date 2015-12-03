@@ -23,7 +23,6 @@
 TOP_GELLO=$(pwd)
 SRC_GELLO=$TOP_GELLO/env/src
 
-DONE_FILE=$TOP_GELLO/.cm_done
 READY_APK=$TOP_GELLO/Gello.apk
 
 
@@ -43,6 +42,8 @@ function sync() {
     if [ "$NOSYNC" != true ]; then
         cd $TOP_GELLO/env
 
+        # If we have previously downloaded depot tools using this script
+        # export its path for us
         if [ -d "$TOP_GELLO/depot/depot_tools" ]; then
             export PATH=$PATH:$TOP_GELLO/depot/depot_tools
         fi
@@ -60,35 +61,52 @@ function sync() {
 # Setup
 #
 function setup() {
+    local DONE_FILE=$TOP_GELLO/.cm_done
+    local GOOGLE_SDK=$SRC_GELLO/third_party/android_tools/sdk/extras/google/google_play_services
+
     cd $SRC_GELLO
 
     . build/android/envsetup.sh
 
-    if [ "$FAST" != true ]; then
+    if [ "$FAST" != true ] && [ -f $DONE_FILE ]; then
+        # !! The first time it asks a manual input to accept licenses !!
         GYP_DEFINES="$GYP_DEFINES OS=android swe_channel=cm" gclient runhooks
         return $?
     else
         return 0
     fi
+
+    if [ ! -f $DONE_FILE ]; then
+        touch $DONE_FILE
+    fi
+
+    # If we don't have Google SDKs, get them
+    # !! This asks a manual input to accept licenses !!
+    if [ ! -d $GOOGLE_SDK ]; then
+        bash $SRC_GELLO/build/install-android-sdks.sh
+    fi
+
+
 }
 
 
 ##
-# compile
+# copushile
 #
-function compile() {
-    local TMP_APK=$SRC_GELLO/out/Release/apks/SWE_AndroidBrowser.apk
+function copushile() {
+    local Tpush_APK=$SRC_GELLO/out/Release/apks/SWE_AndroidBrowser.apk
     local OUT_TARGET=$TOP_GELLO/Gello.apk
 
     cd $SRC_GELLO
 
+    # Make things
     ninja -C out/Release swe_android_browser_apk
 
     if [ "$?" == 0 ]; then
         if [ -f "$OUT_TARGET" ]; then
             rm -f $OUT_TARGET
         fi
-        cp $TMP_APK $OUT_TARGET
+        cp $Tpush_APK $OUT_TARGET
         return $?
     else
         return $?
@@ -116,8 +134,8 @@ function checkflags() {
         NOSYNC=true
     fi
 
-    if [ "$1" == "--mp" ] || [ "$2" == "--mp" ] ||
-       [ "$3" == "--mp" ] || [ "$4" == "--mp" ]; then
+    if [ "$1" == "--push" ] || [ "$2" == "--push" ] ||
+       [ "$3" == "--push" ] || [ "$4" == "--push" ]; then
         PUSH=true
     fi
 }
@@ -135,7 +153,7 @@ flags:
     -v            = Verbose mode, show more details
     --depot       = Install Depot Tool
     --fast        = Skip sync and runhooks, useful for testing changes
-    --mp          = Once everything else is done, install the given apk on a connected device
+    --push         = Once everything else is done, install the given apk on a connected device
     --no-sync     = Skip sync
 EOF
 }
@@ -165,7 +183,7 @@ fi
 
 checkflags $1 $2 $3 $4
 
-sync && setup && compile
+sync && setup && copushile
 
 if [ "$?" == 0 ]; then
     echo "$(tput setaf 2)Done! Gello: $READY_APK$(tput sgr reset)"
